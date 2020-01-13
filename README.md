@@ -3,6 +3,12 @@
 
 写这个工具的原因，在于一个朋友的一个小电商网站，因为未明原因被黑了，总是会被增加超级管理员，并将收款账号改成别人的。于是有了写一个监控工具的想法。
 
+> 因为不断的重新安装/初始化各项系统服务，为了方（TOU）便（LAN），写了一个[服务器初始化脚本](https://github.com/zsenliao/initServer)，主要功能包括：
+> * 可选添加用户及 SSH 傻瓜式配置；
+> * git/zsh/oh-my-zsh 等安装、vim 升级（增加`nginx`, `ini`, `php`, `python`等文件类型的高亮显示）；
+> * MySQL/PHP/Python3(uwsgi)/Redis/Nodejs/Nginx/ikev2/acme.sh 等服务可选择安装；
+> * 提供了一个简单的管理工具，用于管理`nginx`,`mysql`,`php-fpm`,`redis`,`uwsgi`等服务，以及新增站点（自动申请并配置安装域名证书）；
+
 ## 主要功能
 
 ### 监控功能
@@ -11,10 +17,32 @@
 * 数据库备份：设定的数据库全量傻瓜式备份，无监控功能；
 
 ### 报警功能
-* 微信报警：设置好相关的微信公众号参数后，监控到改变会发送微信模板通知；
+* Server酱：通过「[Server酱](http://sc.ftqq.com/3.version)」推送预警消息通知（只能推送给**单个**微信账号）；
+* PushBear：通过「[PushBear](https://pushbear.ftqq.com/admin/#/)」推送预警消息通知（可以推送给**多个**微信账号）；
+* 微信报警：设置好相关的微信公众号参数后，监控到改变会发送微信模板通知（可以推送给**多个**微信账号）；
 * 邮件通知：详细的改变内容会通过邮件发送；
+> 提示：如果是阿里云或者腾讯云服务器，会禁止 `25` 端口，默认方式邮件发送失败。可以手动配置邮件发送服务器或者 `MUTT` ，设置以 `SMTP` 的方式发送邮件。也可以在云服务商管理后台申请解封 `25` 端口。
 
-> 如果没有微信公众号、或者没有做认证，模版消息有限制，可以申请[微信公众平台接口测试账号](https://mp.weixin.qq.com/debug/cgi-bin/sandbox?t=sandbox/login)
+#### 关于Server酱通知
+微信接收通知其实是相当方便的一种方式，但测试账号发出的通知会被折叠到订阅号中，一不留神可能就错过通知消息。
+
+而认证又是相当麻烦的一件事情：需要企业身份申请服务号认证。所以增加Server酱通知。
+
+> **说明：**
+> * 在[微信推送](http://sc.ftqq.com/?c=wechat&a=bind)中绑定微信号后，就可以在微信对话界面看到推送的消息；
+> * Server酱只支持推送到一个微信号，如果想要推送到多个微信号，请使用`PushBear`或微信通知功能；
+
+#### 关于 PushBear 通知
+与`Server酱`一样，区别在于可以推送到多个微信账号。请点击[这里](https://pushbear.ftqq.com/admin/#/channel)先行设置好通道。
+
+#### 关于微信通知
+如果没有微信公众号、或者没有做认证的公众号，发送模版消息有限制。可以申请[微信公众平台接口测试账号](https://mp.weixin.qq.com/debug/cgi-bin/sandbox?t=sandbox/login)，然后新增测试模版，标题随便写，内容如下：
+
+> {{first.DATA}}
+> 网站名称：{{keyword1.DATA}}
+> 监控项目：{{keyword2.DATA}}
+> 预警状态：{{keyword3.DATA}} 
+> {{remark.DATA}}
 
 ## 使用方式
 
@@ -39,25 +67,67 @@ vi shellMonitor/config.sh  # 根据提示修改相关的配置
 shellMonitor/main.sh init
 ```
 
-* 设置系统定时任务
+* 检查系统定时任务是否生效
 ```bash
-crontab -e  # 进入vi编辑模式
-*/5 * * * * /home/shellMonitor/main.sh  # 每 5 分钟执行一次备份脚本
+crontab -l | grep shellMonitor  # shellMonitor 为程序目录名
 ```
-或者直接执行以下操作：
+如返回结果为空，请通过`crontab -e`的方式手动添加。
+
+* `SSH` 登录预警通知的手动添加方式
 ```bash
-echo "*/5 * * * * /home/shellMonitor/main.sh" >> /var/spool/cron/root
+ln -sf /home/shellMonitor/sysMonitor.sh /etc/profile.d/sysMonitor.sh
+
+sed -i "s/^PrintMotd [a-z]*/#&/g; 1,/#PrintMotd[a-z]*/{s/^#PrintMotd [a-z]*/PrintMotd no/g}" /etc/ssh/sshd_config
+
+# 重启 SSH 服务
+service sshd restart
 ```
-**注意：以上的 `/home/shellMonitor/main.sh` 是示例，实际环境中要根据本工具所在的目录来更改。**
+> 注意：需要修改 `sysMonitor.sh` 文件中的 `CUR_DIR` 为脚本所在的实际路径
+
+## 更新说明
+> 如果已经在服务器上使用了本工具，可参照以下说明进行升级
+* 下载`除 config.sh 外`的所有文件，覆盖原来的文件
+* 修改 `config.sh` 文件内容：
+  * 所有变量名（如`Mail_Type`、`DB_User`等）全部改为大写字母
+  * 更改变量值类型：
+    * `DB_MONITOR_TABLE`: 由字符串改为数组形式
+  * 增加变量：
+    * `DB_MONITOR_FIELD`: 数据表中指定监控的字段
+    * `ENABLE_FILE_MONITOR`: 是否启用文件监控
+    * `ENABLE_DB_MONITOR`: 是否启用数据库监控，如禁用，数据库备份也会禁用
+  * 部分变量名更改：
+    * `WEBSITE`        → `HOST_NAME`
+    * `TOUSER`         → `TO_USER`
+    * `APPID`          → `APP_ID`
+    * `SECRET`         → `APP_SECRET`
+    * `SCKEY`          → `FTQQ_SCKEY`
+    * `SENDKEY`        → `FTQQ_SENDKEY`
+    * `SC_NOTIC`       → `FTQQ_SC_NOTICE`
+    * `PUSHBEAR_NOTIC` → `FTQQ_PB_NOTICE`
+  * 删除变量（可选）：
+    * `MAIL_FROM`
+    * `DB_ADMIN_MONITOR_TABLE`
+    * `DB_ADMIN_MONITOR_FIELD`
+* 在当前目录下执行以下操作：
+  * sed -i "s#\\\`which mysql\\\`#\`which mysql\`#g" dbMonitor.sh
+  * sed -i "s#\\\`which mysqldump\\\`#\`which mysqldump\`#g" dbMonitor.sh
 
 ## TODO
-* [ ] 将设定系统任务添加到初始化任务中
-* [ ] 监控文件或数据库设置错误情况下的异常处理
-* [ ] 如邮件通知方式选择 `mutt` 但系统中并没有安装改工具下的处理
-* [ ] 增加 `SSH` 或 `SFTP` 登录的预警通知
+* [x] 将设定系统任务添加到初始化任务中
+* [x] 监控文件或数据库设置错误情况下的 ~~异常~~ **报警** 处理
+* [x] 如邮件通知方式选择 `mutt` 但系统中并没有安装改工具下的处理
+* [x] 增加 `SSH` 登录的预警通知
+* [x] 增加 `SFTP` 登录的预警通知
+* [ ] 增加 `SCP` 上传文件的预警通知
+* [x] 增加「[PushBear](http://pushbear.ftqq.com/admin/#/api)」预警通知功能
+* [x] 增加 「[Server酱](http://sc.ftqq.com/3.version)」预警通知功能
+* [x] 优化微信 `ACCESS_TOKEN` 获取方式
+* [x] ~~文件监控中，增加多个排除的目录~~
+* [x] 优化数据库/表的监控
+* [ ] 检测更改文件的内容
 
 ## 相关说明及风险提示
-* 本工具可作为一些个人网站，或一些小微电商类型网站做**伪**入侵检测工具用，毕竟小微团队在系统运维及安全方面的投入基弧没有；
+* 本工具可作为一些个人网站，或一些小微电商类型网站做**伪**入侵检测工具用，毕竟小微团队在系统运维及安全方面的投入几乎没有；
 * 对于具备资源的团队，还是需要从**运维策略**上来考虑安全风险防范的问题；
 * 本工具对于系统资源的消耗，并未经测试过；不过我认为目前一般商用的服务器配置，即便是小团队的电商网站的服务器配置，都经得起这点消耗吧；
 * 如果您使用了本工具，也请不要完全依赖本工具。如有条件，想办法做系统层面、数据库层面、代码层面的加固；如条件实在不足，也请多关注您系统的异常状况。
